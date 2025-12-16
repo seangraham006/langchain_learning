@@ -4,5 +4,4 @@ from runtime.agent import Agent
 
 class Mayor(Agent):
     async def handle(self, message):
-        print("Mayor considers:", message)
-        await asyncio.sleep(2)
+        await self.respond("As mayor, I will address this issue promptly.")

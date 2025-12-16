@@ -5,6 +5,12 @@ from config import STREAM_TOPICS
 class Agent:
     def __init__(self, role: str):
         self.role = role
+
+    async def respond(self, text: str):
+        await redis_client.xadd(
+            STREAM_TOPICS,
+            {'role': self.role, 'text': text}
+        )
     
     async def handle(self, message: dict):
         raise NotImplementedError("This method should be overridden by subclasses.")

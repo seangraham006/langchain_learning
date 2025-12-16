@@ -1,2 +1,9 @@
 .env
 .venv/
+*__pycache__/
+*.pyc
+.DS_Store
+runtime/__pycache__/
+runtime/*.pyc
+agents/__pycache__/
+agents/*.pyc

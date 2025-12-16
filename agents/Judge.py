@@ -4,5 +4,4 @@ from runtime.agent import Agent
 
 class Judge(Agent):
     async def handle(self, message):
-        print("Judge evaluates:", message)
-        await asyncio.sleep(3)
+        await self.respond("This matter requires evidence.")

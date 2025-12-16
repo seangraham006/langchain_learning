@@ -4,5 +4,5 @@ from runtime.agent import Agent
 
 class Villager(Agent):
     async def handle(self, message):
-        print("Villager heard:", message)
-        await asyncio.sleep(1)
+        text = message.get('text', '')
+        await self.respond(f"I am concerned about: {text}")
