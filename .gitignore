@@ -7,3 +7,11 @@ runtime/__pycache__/
 runtime/*.pyc
 agents/__pycache__/
 agents/*.pyc
+dump.rdb
+models/__pycache__/
+models/*.pyc
+tests/__pycache__/
+tests/*.pyc
+.vscode/
+.idea/
+*.pyc
