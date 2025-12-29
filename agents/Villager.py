@@ -6,15 +6,24 @@ from models.TinyLlamaModel import TinyLlamaModel
 from models.MistralModel import MistralModel
 
 class Villager(Agent):
-    async def handle(self, message):
+    async def handle(self, message, msg_id, context):
 
         text = message.get('text', '')
         speaker = message.get('role', 'unknown')
+
+        conversation_history = ""
+        if context:
+            conversation_history = "Recent Conversation:\n"
+            for msg in context[-3:]:
+                conversation_history += f"{msg['role']}: {msg['text']}\n"
+            conversation_history += "\n"
 
         prompt = f"""
         You are a concerned villager in a medieval town.
         You have a cockney accent.
         You are in a townhall meeting where people are discussing issues facing the town and new legislation.
+
+        {conversation_history}
 
         The {speaker} just said: "{text}"
 

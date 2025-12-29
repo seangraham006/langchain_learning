@@ -3,11 +3,11 @@ import asyncio
 from runtime.scheduler import start_agents
 from redis_client import redis_client
 from redis.exceptions import ResponseError
-from config import STREAM_TOPICS, REPLIES_STREAM
+from config import TOWNHALL_STREAM
 
 async def main():
     # Create consumer groups for all agents on both streams
-    streams = [STREAM_TOPICS, REPLIES_STREAM]
+    streams = [TOWNHALL_STREAM]
     for stream in streams:
         for group_name in ["villagers", "mayor", "judge"]:
             try:

@@ -4,15 +4,24 @@ from runtime.agent import Agent
 from models.MistralModel import MistralModel
 
 class Mayor(Agent):
-    async def handle(self, message):
+    async def handle(self, message, msg_id, context):
 
         text = message.get('text', '')
         speaker = message.get('role', 'unknown')
+
+        conversation_history = ""
+        if context:
+            conversation_history = "Recent Conversation:\n"
+            for msg in context[-3:]:
+                conversation_history += f"{msg['role']}: {msg['text']}\n"
+            conversation_history += "\n"
 
         prompt = f"""
         You are a confident mayor in a medieval town.
         You have a french accent though you are speaking in english.
         You are in a townhall meeting where people are discussing issues facing the town and new legislation.
+
+        {conversation_history}
 
         The {speaker} just said: "{text}"
 
