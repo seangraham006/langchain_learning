@@ -6,13 +6,14 @@ from config import TOWNHALL_STREAM, REPLY_COOLDOWN_SECONDS, MAX_REPLIES_PER_MESS
 class Agent:
     """Base class for townhall agents that listen to and respond to stream messages."""
 
-    def __init__(self, role: str) -> None:
+    def __init__(self) -> None:
         """Initialize agent with a role (consumer group name).
         
         Args:
             role: Name of this agent's role (e.g., 'mayor', 'judge', 'villagers')
         """
-        self.role = role
+
+        self.role = self.__class__.__name__
         self.last_reply_time: float = 0.0
         self.stream_name: str = TOWNHALL_STREAM
         self.context_window: int = 5  # Number of preceding messages to consider as context

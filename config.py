@@ -14,7 +14,6 @@ Consumer groups do not just 'receive' the metadata pings, they keep polling the 
 
 
 TOWNHALL_STREAM = "townhall"
-ROLES = ["villager", "mayor", "judge"]
 
 MAX_REPLIES_PER_MESSAGE = 1
 REPLY_COOLDOWN_SECONDS = 10

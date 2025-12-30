@@ -1,5 +1,5 @@
 import asyncio
-from runtime.agent import Agent
+from agents.Agent import Agent
 
 from models.MistralModel import MistralModel
 

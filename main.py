@@ -10,6 +10,7 @@ from config import TOWNHALL_STREAM
 from agents.Villager import Villager
 from agents.Mayor import Mayor
 from agents.Judge import Judge
+from agents.Agent import Agent
 
 @typechecked
 async def setup_redis(redis: Redis, stream_name: str, group_names: list[str], start_id: str = "$") -> None:
@@ -31,18 +32,18 @@ async def setup_redis(redis: Redis, stream_name: str, group_names: list[str], st
         except ResponseError:
             print(f"Group '{group}' already exists on stream '{stream_name}'")
 
-async def start_agents():
-    agents = [
-        Villager("villager"),
-        Mayor("mayor"),
-        Judge("judge")
-    ]
-
+async def start_agents(agents: list[Agent]) -> None:
     await asyncio.gather(*(agent.run() for agent in agents))
 
 async def main():
-    await setup_redis(redis_client, TOWNHALL_STREAM, ["villager", "mayor", "judge"])
-    await start_agents()
+    agents = [
+        Villager(),
+        Mayor(),
+        Judge()
+    ]
+
+    await setup_redis(redis_client, TOWNHALL_STREAM, [agent.role for agent in agents])
+    await start_agents(agents)
 
 async def cleanup():
     try:
