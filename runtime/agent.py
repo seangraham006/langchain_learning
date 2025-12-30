@@ -40,7 +40,7 @@ class Agent:
             True if the agent should respond, False otherwise
         """
 
-        if message.get("role", message.get("speaker")) == self.role:
+        if message.get("role") == self.role:
             return False
 
         if msg_id in self.replied_to:
@@ -91,7 +91,9 @@ class Agent:
 
     async def run(self) -> None:
         """Main event loop: listen for messages and process them."""
+
         while True:
+
             messages = await redis_client.xreadgroup(
                 groupname=self.role,
                 consumername=self.role,
@@ -99,6 +101,8 @@ class Agent:
                 count=1,
                 block=0
             )
+
+            print(f"{self.role} reading message:\n{messages}\n")
 
             for _, entries in messages:
                 for msg_id, fields in entries:
