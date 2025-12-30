@@ -3,7 +3,6 @@ from typing import Any
 from redis_client import redis_client
 from config import TOWNHALL_STREAM, REPLY_COOLDOWN_SECONDS, MAX_REPLIES_PER_MESSAGE
 
-
 class Agent:
     """Base class for townhall agents that listen to and respond to stream messages."""
 
@@ -14,8 +13,9 @@ class Agent:
             role: Name of this agent's role (e.g., 'mayor', 'judge', 'villagers')
         """
         self.role = role
-        self.replied_to: set[str] = set()
         self.last_reply_time: float = 0.0
+        self.stream_name: str = TOWNHALL_STREAM
+        self.context_window: int = 5  # Number of preceding messages to consider as context
 
     async def respond(self, text: str) -> None:
         """Send a response message to the replies stream.
@@ -25,7 +25,7 @@ class Agent:
         """
         print(f"\n{self.role} responding: {text}")
         await redis_client.xadd(
-            TOWNHALL_STREAM,
+            self.stream_name,
             {"role": self.role, "text": text}
         )
 
@@ -43,39 +43,36 @@ class Agent:
         if message.get("role") == self.role:
             return False
 
-        if msg_id in self.replied_to:
-            return False
-
         current_time = asyncio.get_event_loop().time()
         if current_time - self.last_reply_time < REPLY_COOLDOWN_SECONDS:
             return False
 
         return True
 
-    async def get_context(self, msg_id: str, count: int = 5) -> list[dict[str, Any]]:
-        """Retrieve context messages preceding the given message ID.
-        
-        Args:
-            msg_id: ID of the message in the stream
-            count: Number of preceding messages to retrieve
-
-        Returns:
-            List of preceding message data dictionaries
+    async def get_context(self, bound_msg_id: str, count: int) -> list[dict[str, Any]]:
         """
+        Retrieve context messages preceding the given message ID.
+        """
+
         messages = await redis_client.xrevrange(
-            TOWNHALL_STREAM,
-            max=msg_id,
+            self.stream_name,
+            max=bound_msg_id,
             min='-',
             count=count
         )
+        messages.reverse()
 
-        context = []
-        for _, fields in reversed(messages):
-            context.append(fields)
+        parsed_batch = []
 
-        return context
+        for message in messages:
+            msg_id, fields = message
+            if msg_id == bound_msg_id:
+                continue
+            parsed_batch.append({"msg_id": msg_id, "fields": fields})
 
-    async def handle(self, message: dict[str, Any], msg_id: str, context: list[dict[str, Any]]) -> None:
+        return parsed_batch
+
+    async def think(self, message: dict[str, Any], msg_id: str, context: list[dict[str, Any]]) -> None:
         """Process an incoming message. Subclasses must override.
         
         Args:
@@ -87,37 +84,41 @@ class Agent:
         Raises:
             NotImplementedError: If not overridden by subclass
         """
-        raise NotImplementedError("Subclasses must implement handle()")
+        raise NotImplementedError("Subclasses must implement think()")
 
     async def run(self) -> None:
         """Main event loop: listen for messages and process them."""
 
         while True:
-
-            messages = await redis_client.xreadgroup(
+            unread_messages = await redis_client.xreadgroup(
                 groupname=self.role,
                 consumername=self.role,
-                streams={TOWNHALL_STREAM: ">"},
-                count=1,
+                streams={self.stream_name: ">"},
+                count=self.context_window,
                 block=0
             )
 
-            print(f"{self.role} reading message:\n{messages}\n")
+            if not unread_messages:
+                continue
 
-            for _, entries in messages:
+            print(f"{self.role} reading {len(unread_messages)} message(s):\n{unread_messages}\n")
+
+            parsed_batch = []
+            
+            for stream_name, entries in unread_messages:
                 for msg_id, fields in entries:
-                    try:
-                        if await self.should_respond_to(msg_id, fields):
-                            context = await self.get_context(msg_id, count=5)
-                            await self.handle(fields, msg_id, context)
-                            self.replied_to.add(msg_id)
+                    parsed_batch.append({"msg_id": msg_id, "fields": fields})
+                    await redis_client.xack(
+                        self.stream_name,
+                        self.role,
+                        msg_id
+                    )
 
-                    except Exception as e:
-                        print(f"{self.__class__} Error handling message {msg_id}: {e}")
+            if len(parsed_batch) < self.context_window:
+                context = await self.get_context(parsed_batch[0]["msg_id"], count=self.context_window - len(parsed_batch))
+                parsed_batch = context + parsed_batch
 
-                    finally:
-                        await redis_client.xack(
-                            TOWNHALL_STREAM,
-                            self.role,
-                            msg_id
-                        )
+
+            print(f"{self.role} parsed batch: {parsed_batch}")
+            thought = await self.think(parsed_batch)
+            await self.respond(thought)

@@ -4,7 +4,7 @@ from runtime.agent import Agent
 from models.MistralModel import MistralModel
 
 class Judge(Agent):
-    async def handle(self, message, msg_id, context):
+    async def think(self, message, msg_id, context):
 
         text = message.get('text', '')
         speaker = message.get('role', 'unknown')

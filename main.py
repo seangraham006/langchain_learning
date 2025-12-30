@@ -3,10 +3,13 @@ from redis.asyncio import Redis
 from redis.exceptions import ResponseError
 import asyncio
 from typeguard import typechecked
-from runtime.scheduler import start_agents
 from redis_client import redis_client
 from redis.exceptions import ResponseError
 from config import TOWNHALL_STREAM
+
+from agents.Villager import Villager
+from agents.Mayor import Mayor
+from agents.Judge import Judge
 
 @typechecked
 async def setup_redis(redis: Redis, stream_name: str, group_names: list[str], start_id: str = "$") -> None:
@@ -27,6 +30,15 @@ async def setup_redis(redis: Redis, stream_name: str, group_names: list[str], st
             print(f"Created group '{group}' on stream '{stream_name}'")
         except ResponseError:
             print(f"Group '{group}' already exists on stream '{stream_name}'")
+
+async def start_agents():
+    agents = [
+        Villager("villagers"),
+        Mayor("mayor"),
+        Judge("judge")
+    ]
+
+    await asyncio.gather(*(agent.run() for agent in agents))
 
 async def main():
     await setup_redis(redis_client, TOWNHALL_STREAM, ["villagers", "mayor", "judge"])
