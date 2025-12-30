@@ -72,7 +72,28 @@ class Agent:
 
         return parsed_batch
 
-    async def think(self, message: dict[str, Any], msg_id: str, context: list[dict[str, Any]]) -> None:
+    def format_context(self, context: list[dict[str, Any]]) -> str:
+        """
+        Format context messages into a string for prompt inclusion.
+        """
+        conversation_history = ""
+        for msg in context:
+            fields = msg.get('fields')
+
+            if fields is None:
+                continue
+
+            role = fields.get('role')
+            text = fields.get('text')
+
+            if role is None or text is None:
+                continue
+
+            conversation_history += f"{role if role != self.role else 'You'}: {text}\n\n"
+
+        return conversation_history
+
+    async def think(self, context: str) -> str:
         """Process an incoming message. Subclasses must override.
         
         Args:
@@ -101,7 +122,7 @@ class Agent:
             if not unread_messages:
                 continue
 
-            print(f"{self.role} reading {len(unread_messages)} message(s):\n{unread_messages}\n")
+            # print(f"{self.role} reading {len(unread_messages)} message(s):\n{unread_messages}\n")
 
             parsed_batch = []
             
@@ -115,10 +136,9 @@ class Agent:
                     )
 
             if len(parsed_batch) < self.context_window:
-                context = await self.get_context(parsed_batch[0]["msg_id"], count=self.context_window - len(parsed_batch))
+                context = await self.get_context(parsed_batch[0]["msg_id"], count=self.context_window - len(parsed_batch) + 1)
                 parsed_batch = context + parsed_batch
 
-
-            print(f"{self.role} parsed batch: {parsed_batch}")
+            print(f"Formatted thought of {self.role}:\n{self.format_context(parsed_batch)}\n")
             thought = await self.think(parsed_batch)
             await self.respond(thought)

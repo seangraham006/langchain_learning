@@ -33,7 +33,7 @@ async def setup_redis(redis: Redis, stream_name: str, group_names: list[str], st
 
 async def start_agents():
     agents = [
-        Villager("villagers"),
+        Villager("villager"),
         Mayor("mayor"),
         Judge("judge")
     ]
@@ -41,7 +41,7 @@ async def start_agents():
     await asyncio.gather(*(agent.run() for agent in agents))
 
 async def main():
-    await setup_redis(redis_client, TOWNHALL_STREAM, ["villagers", "mayor", "judge"])
+    await setup_redis(redis_client, TOWNHALL_STREAM, ["villager", "mayor", "judge"])
     await start_agents()
 
 async def cleanup():
