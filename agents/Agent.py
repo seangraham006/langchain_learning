@@ -2,6 +2,15 @@ import asyncio
 from typing import Any
 from redis_client import redis_client
 from config import TOWNHALL_STREAM, REPLY_COOLDOWN_SECONDS, MAX_REPLIES_PER_MESSAGE
+from typeguard import typechecked
+from typing import List, Tuple, Dict, Sequence, Union, Mapping
+from dataclasses import dataclass
+from pydantic import BaseModel
+
+class StreamMessage(BaseModel):
+    msg_id: str
+    role: str
+    text: str
 
 class Agent:
     """Base class for townhall agents that listen to and respond to stream messages."""
@@ -18,41 +27,68 @@ class Agent:
         self.stream_name: str = TOWNHALL_STREAM
         self.context_window: int = 5  # Number of preceding messages to consider as context
 
-    async def respond(self, text: str) -> None:
-        """Send a response message to the replies stream.
-        
-        Args:
-            text: Response message to send
+    @typechecked
+    async def process_unread_messages(self, raw: Any) -> list[StreamMessage]:
         """
-        print(f"\n{self.role} responding: {text}")
-        await redis_client.xadd(
-            self.stream_name,
-            {"role": self.role, "text": text}
-        )
-
-    async def should_respond_to(self, msg_id: str, message: dict[str, Any]) -> bool:
-        """Determine if the agent should respond to a given message.
-        
-        Args:
-            msg_id: ID of the message in the stream
-            message: Message data from the stream
-
-        Returns:
-            True if the agent should respond, False otherwise
+        Process a batch of unread messages from the stream and acknowledge them.
         """
 
-        if message.get("role") == self.role:
-            return False
+        parsed_batch = []
 
-        current_time = asyncio.get_event_loop().time()
-        if current_time - self.last_reply_time < REPLY_COOLDOWN_SECONDS:
-            return False
+        for stream_name, entries in raw:
+            for msg_id, fields in entries:
+                await redis_client.xack(
+                    self.stream_name,
+                    self.role,
+                    msg_id
+                )
 
-        return True
+                role = fields.get("role", None)
+                text = fields.get("text", None)
 
-    async def get_context(self, bound_msg_id: str, count: int) -> list[dict[str, Any]]:
+                if role is None or text is None:
+                    continue
+
+                message = StreamMessage(
+                    msg_id=msg_id,
+                    role=role,
+                    text=text
+                )
+
+                parsed_batch.append(message)
+
+        return parsed_batch
+
+    @typechecked
+    def process_read_messages(self, raw: Any) -> list[StreamMessage]:
         """
-        Retrieve context messages preceding the given message ID.
+        Process a batch of read messages from the stream.
+        """
+
+        parsed_batch = []
+
+        for message in raw:
+            msg_id, fields = message
+
+            role = fields.get("role", None)
+            text = fields.get("text", None)
+
+            if role is None or text is None:
+                continue
+
+            message = StreamMessage(
+                msg_id=msg_id,
+                role=role,
+                text=text
+            )
+            parsed_batch.append(message)
+
+        return parsed_batch
+
+    @typechecked
+    async def get_context(self, bound_msg_id: str, count: int) -> list[StreamMessage]:
+        """
+        Retrieve context messages from the redis stream before a given message ID.
         """
 
         messages = await redis_client.xrevrange(
@@ -63,36 +99,31 @@ class Agent:
         )
         messages.reverse()
 
-        parsed_batch = []
+        parsed_batch = self.process_read_messages(messages)
 
-        for message in messages:
-            msg_id, fields = message
-            if msg_id == bound_msg_id:
-                continue
-            parsed_batch.append({"msg_id": msg_id, "fields": fields})
+        for message in parsed_batch:
+            if message.msg_id == bound_msg_id:
+                parsed_batch.remove(message)
 
         return parsed_batch
 
-    def format_context(self, context: list[dict[str, Any]]) -> str:
+    # @typechecked
+    # async def should_respond_to(self, context: list[dict[str, Any]]) -> bool:
+    #     """Determine if the agent should respond to a given message."""
+    #     # Basic implementation: always respond
+
+    #     #Rule: An agent should not respond to themselves
+    #     if message.get("role") == self.role:
+    #         return False
+    #     return True
+
+    @typechecked
+    def format_context(self, context: list[StreamMessage]) -> str:
         """
         Format context messages into a string for prompt inclusion.
         """
-        conversation_history = ""
-        for msg in context:
-            fields = msg.get('fields')
 
-            if fields is None:
-                continue
-
-            role = fields.get('role')
-            text = fields.get('text')
-
-            if role is None or text is None:
-                continue
-
-            conversation_history += f"{role if role != self.role else 'You'}: {text}\n\n"
-
-        return conversation_history
+        return "".join(f"{msg.role if msg.role != self.role else 'You'}: {msg.text}\n\n" for msg in context)
 
     async def think(self, context: str) -> str:
         """Process an incoming message. Subclasses must override.
@@ -108,10 +139,23 @@ class Agent:
         """
         raise NotImplementedError("Subclasses must implement think()")
 
+    @typechecked
+    async def respond(self, text: str) -> None:
+        """
+        Post a response message to the redis stream.
+        """
+
+        print(f"\n{self.role} responding: {text}")
+        await redis_client.xadd(
+            self.stream_name,
+            {"role": self.role, "text": text}
+        )
+
     async def run(self) -> None:
         """Main event loop: listen for messages and process them."""
 
         while True:
+            # Listen for new messages in the stream
             unread_messages = await redis_client.xreadgroup(
                 groupname=self.role,
                 consumername=self.role,
@@ -120,26 +164,15 @@ class Agent:
                 block=0
             )
 
-            if not unread_messages:
-                continue
-
-            # print(f"{self.role} reading {len(unread_messages)} message(s):\n{unread_messages}\n")
-
-            parsed_batch = []
+            print(f"{self.role} received {len(unread_messages)} new messages.  Unread messages: {unread_messages}")
+            parsed_batch = await self.process_unread_messages(unread_messages)
             
-            for stream_name, entries in unread_messages:
-                for msg_id, fields in entries:
-                    parsed_batch.append({"msg_id": msg_id, "fields": fields})
-                    await redis_client.xack(
-                        self.stream_name,
-                        self.role,
-                        msg_id
-                    )
-
             if len(parsed_batch) < self.context_window:
-                context = await self.get_context(parsed_batch[0]["msg_id"], count=self.context_window - len(parsed_batch) + 1)
+                context = await self.get_context(parsed_batch[0].msg_id, count=self.context_window - len(parsed_batch) + 1)
                 parsed_batch = context + parsed_batch
 
-            print(f"Formatted thought of {self.role}:\n{self.format_context(parsed_batch)}\n")
-            thought = await self.think(parsed_batch)
+            formatted_context = self.format_context(parsed_batch)
+
+            print(f"Formatted thought of {self.role}:\n{formatted_context}\n")
+            thought = await self.think(formatted_context)
             await self.respond(thought)
