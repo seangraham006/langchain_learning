@@ -6,11 +6,16 @@ from typeguard import typechecked
 from typing import List, Tuple, Dict, Sequence, Union, Mapping
 from pydantic import BaseModel
 import time
+from models.MistralModel import MistralModel
 
 class StreamMessage(BaseModel):
     msg_id: str
     role: str
     text: str
+
+class AgentPersona(BaseModel):
+    dynamically_generated_prompt: str
+    backup_message: str
 
 class Agent:
     """Base class for townhall agents that listen to and respond to stream messages."""
@@ -32,7 +37,7 @@ class Agent:
         self.stream_name: str = stream_name
         self.context_window: int = context_window
         self.max_replies_per_agent: int = max_replies_per_agent
-        
+
         self.replies_sent: int = 0
 
     @typechecked
@@ -133,19 +138,27 @@ class Agent:
 
         return "".join(f"{msg.role if msg.role != self.role else 'You'}: {msg.text}\n\n" for msg in context)
 
-    async def think(self, context: str) -> str:
-        """Process an incoming message. Subclasses must override.
-        
-        Args:
-            message: Message data from the stream
-            msg_id: ID of the message in the stream
-            context: List of preceding messages for context        Args:
-            message: Message data from the stream
-            context: Context messages preceding the current message
-        Raises:
-            NotImplementedError: If not overridden by subclass
+    @typechecked
+    def generate_prompt(self, context: str) -> AgentPersona:
         """
-        raise NotImplementedError("Subclasses must implement think()")
+        Format the prompt for the agent.  Include their personality and what they are to do with the provided information.
+        """
+
+        raise NotImplementedError("Subclasses must implement format_prompt()")
+
+    @typechecked
+    async def think(self, persona: AgentPersona) -> str:
+        """
+        Generate a response based on the provided context.  Override to change model or generation method.
+        """
+
+        try:
+            response = await asyncio.to_thread(MistralModel.invoke, persona.dynamically_generated_prompt)
+            response_text = response.content if hasattr(response, 'content') else str(response)
+            return response_text
+        except Exception as e:
+            print(f"\n{self.__class__} Error generating response: {e}")
+            return persona.backup_message
 
     @typechecked
     async def respond(self, text: str) -> None:
@@ -185,8 +198,6 @@ class Agent:
                 continue
 
             formatted_context = self.format_context(parsed_batch)
-
-            # print(f"Formatted thought of {self.role}:\n{formatted_context}\n")
-
-            thought = await self.think(formatted_context)
+            persona = self.generate_prompt(formatted_context)
+            thought = await self.think(persona)
             await self.respond(thought)

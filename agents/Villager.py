@@ -1,13 +1,12 @@
 # agents/villager.py
 import asyncio
-from agents.Agent import Agent
-
-from models.TinyLlamaModel import TinyLlamaModel
-from models.MistralModel import MistralModel
+from agents.Agent import Agent, AgentPersona
+from typeguard import typechecked
 
 class Villager(Agent):
-    async def think(self, context: str) -> str:
-
+    
+    @typechecked
+    def generate_prompt(self, context: str) -> AgentPersona:
         conversation_history = f"Recent conversation:\n{context}" if context else ""
 
         prompt = f"""
@@ -25,12 +24,7 @@ class Villager(Agent):
 
         backup_message = "Oi! I ain't got much to say 'bout that right now."
 
-        try:
-            # response = await asyncio.to_thread(TinyLlamaModel.invoke, prompt)
-            response = await asyncio.to_thread(MistralModel.invoke, prompt)
-            # Extract text content from AIMessage object
-            response_text = response.content if hasattr(response, 'content') else str(response)
-            return response_text
-        except Exception as e:
-            print(f"{self.__class__} Error generating response: {e}")
-            return backup_message
+        return AgentPersona(
+            dynamically_generated_prompt=prompt,
+            backup_message=backup_message
+        )
