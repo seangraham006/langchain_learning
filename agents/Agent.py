@@ -107,15 +107,15 @@ class Agent:
 
         return parsed_batch
 
-    # @typechecked
-    # async def should_respond_to(self, context: list[dict[str, Any]]) -> bool:
-    #     """Determine if the agent should respond to a given message."""
-    #     # Basic implementation: always respond
+    @typechecked
+    def should_respond_to(self, context: list[StreamMessage]) -> bool:
+        """Determine if the agent should respond the given context."""
 
-    #     #Rule: An agent should not respond to themselves
-    #     if message.get("role") == self.role:
-    #         return False
-    #     return True
+        last_message = context[-1]
+        if last_message.role == self.role:
+            return False
+
+        return True
 
     @typechecked
     def format_context(self, context: list[StreamMessage]) -> str:
@@ -164,15 +164,20 @@ class Agent:
                 block=0
             )
 
-            print(f"{self.role} received {len(unread_messages)} new messages.  Unread messages: {unread_messages}")
+            # print(f"{self.role} received {len(unread_messages)} new messages.  Unread messages: {unread_messages}")
             parsed_batch = await self.process_unread_messages(unread_messages)
             
             if len(parsed_batch) < self.context_window:
                 context = await self.get_context(parsed_batch[0].msg_id, count=self.context_window - len(parsed_batch) + 1)
                 parsed_batch = context + parsed_batch
 
+            if not self.should_respond_to(parsed_batch):
+                print(f"{self.role} decided not to respond to the message.")
+                continue
+
             formatted_context = self.format_context(parsed_batch)
 
-            print(f"Formatted thought of {self.role}:\n{formatted_context}\n")
+            # print(f"Formatted thought of {self.role}:\n{formatted_context}\n")
+
             thought = await self.think(formatted_context)
             await self.respond(thought)
