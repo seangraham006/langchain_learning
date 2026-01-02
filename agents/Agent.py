@@ -1,11 +1,11 @@
 import asyncio
 from typing import Any
 from redis_client import redis_client
-from config import TOWNHALL_STREAM, REPLY_COOLDOWN_SECONDS, MAX_REPLIES_PER_MESSAGE
+from config import TOWNHALL_STREAM, REPLY_COOLDOWN_SECONDS, MAX_REPLIES_PER_AGENT, CONTEXT_WINDOW
 from typeguard import typechecked
 from typing import List, Tuple, Dict, Sequence, Union, Mapping
-from dataclasses import dataclass
 from pydantic import BaseModel
+import time
 
 class StreamMessage(BaseModel):
     msg_id: str
@@ -15,17 +15,25 @@ class StreamMessage(BaseModel):
 class Agent:
     """Base class for townhall agents that listen to and respond to stream messages."""
 
-    def __init__(self) -> None:
-        """Initialize agent with a role (consumer group name).
-        
-        Args:
-            role: Name of this agent's role (e.g., 'mayor', 'judge', 'villagers')
+    def __init__(
+            self,
+            role: str = None,
+            reply_cooldown_seconds: float = REPLY_COOLDOWN_SECONDS,
+            stream_name: str = TOWNHALL_STREAM,
+            context_window: int = CONTEXT_WINDOW,
+            max_replies_per_agent: int = MAX_REPLIES_PER_AGENT
+        ) -> None:
+        """
+        Initialize the agent with default parameters.
         """
 
-        self.role = self.__class__.__name__
-        self.last_reply_time: float = 0.0
-        self.stream_name: str = TOWNHALL_STREAM
-        self.context_window: int = 5  # Number of preceding messages to consider as context
+        self.role: str = role if role else self.__class__. __name__
+        self.reply_cooldown_seconds: float = reply_cooldown_seconds
+        self.stream_name: str = stream_name
+        self.context_window: int = context_window
+        self.max_replies_per_agent: int = max_replies_per_agent
+        
+        self.replies_sent: int = 0
 
     @typechecked
     async def process_unread_messages(self, raw: Any) -> list[StreamMessage]:
@@ -151,10 +159,12 @@ class Agent:
             {"role": self.role, "text": text}
         )
 
+        time.sleep(self.reply_cooldown_seconds)
+
     async def run(self) -> None:
         """Main event loop: listen for messages and process them."""
 
-        while True:
+        while self.replies_sent < self.max_replies_per_agent:
             # Listen for new messages in the stream
             unread_messages = await redis_client.xreadgroup(
                 groupname=self.role,
@@ -172,7 +182,6 @@ class Agent:
                 parsed_batch = context + parsed_batch
 
             if not self.should_respond_to(parsed_batch):
-                print(f"{self.role} decided not to respond to the message.")
                 continue
 
             formatted_context = self.format_context(parsed_batch)
