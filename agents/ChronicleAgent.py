@@ -2,7 +2,7 @@ from typeguard import typechecked
 import asyncio
 import time
 
-from config import EVENTS_BEFORE_SUMMARY, TOWNHALL_STREAM, SUMMARY_SOFT_LIMIT_WORDS, RETRIES_FOR_SUMMARISATION
+from config import EVENTS_BEFORE_SUMMARY, TOWNHALL_STREAM, SUMMARY_SOFT_LIMIT_WORDS, RETRIES_FOR_SUMMARISATION, SUMMARISATION_CHECK_COOLDOWN_SECONDS
 from schemas.core import StreamMessage
 from redis_client import redis_client
 from utils.parse_redis import process_read_messages
@@ -15,6 +15,7 @@ class ChronicleAgent:
             self,
             role: str = None,
             stream_name: str = TOWNHALL_STREAM,
+            summarisation_check_cooldown_seconds: float = SUMMARISATION_CHECK_COOLDOWN_SECONDS,
             events_before_summary: int = EVENTS_BEFORE_SUMMARY
         ) -> None:
         """
@@ -23,6 +24,7 @@ class ChronicleAgent:
 
         self.role: str = role if role else self.__class__.__name__
         self.stream_name: str = stream_name
+        self.summarisation_check_cooldown_seconds = summarisation_check_cooldown_seconds
         self.events_before_summary: int = events_before_summary
 
         self.last_summarised_event_id: str | None = None
@@ -69,7 +71,7 @@ class ChronicleAgent:
         """
 
         while True:
-            time.sleep(1)
+            time.sleep(self.summarisation_check_cooldown_seconds)
 
             start_id = (
                 "-" if self.last_summarised_event_id is None
@@ -85,11 +87,9 @@ class ChronicleAgent:
 
             parsed_messages: list[StreamMessage] = process_read_messages(unread_messages)
 
-            # print(f"\n{self.role} num parsed_messages: {len(parsed_messages)}")
-
             if len(parsed_messages) >= self.events_before_summary:
-
-                end_id = parsed_messages[-1].msg_id
+                start_msg_id = parsed_messages[0].msg_id
+                end_msg_id = parsed_messages[-1].msg_id
 
                 try:
                     summary = await self.summarise_events(parsed_messages)
@@ -98,5 +98,5 @@ class ChronicleAgent:
                     continue
 
                 # Here you would save the summary to a vector database
-                print(f"\n{self.role} Generated Summary for messages from {start_id} to {end_id}:\n{summary}")
-                self.last_summarised_event_id = end_id
+                print(f"\n{self.role} Generated Summary for messages from {start_msg_id} to {end_msg_id}:\n{summary}")
+                self.last_summarised_event_id = end_msg_id
