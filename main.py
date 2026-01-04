@@ -11,6 +11,7 @@ from agents.Villager import Villager
 from agents.Mayor import Mayor
 from agents.Judge import Judge
 from agents.Agent import Agent
+from agents.ChronicleAgent import ChronicleAgent
 
 @typechecked
 async def setup_redis(redis: Redis, stream_name: str, group_names: list[str], start_id: str = "$") -> None:
@@ -39,7 +40,8 @@ async def main():
     agents = [
         Villager(),
         Mayor(),
-        Judge()
+        Judge(),
+        ChronicleAgent()
     ]
 
     await setup_redis(redis_client, TOWNHALL_STREAM, [agent.role for agent in agents])

@@ -121,7 +121,7 @@ class Agent:
                 block=0
             )
 
-            # print(f"{self.role} received {len(unread_messages)} new messages.  Unread messages: {unread_messages}")
+            # Parse unread messages and acknowledge them
             parsed_batch: list[StreamMessage] = await process_unread_messages(self.role, self.stream_name, unread_messages)
             
             if len(parsed_batch) < self.context_window:
