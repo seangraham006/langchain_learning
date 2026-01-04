@@ -1,5 +1,5 @@
-import asyncio
-from agents.Agent import Agent, AgentPersona
+from agents.Agent import Agent
+from schemas.core import AgentPersona
 from typeguard import typechecked
 
 class Mayor(Agent):

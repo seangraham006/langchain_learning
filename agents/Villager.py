@@ -1,6 +1,5 @@
-# agents/villager.py
-import asyncio
-from agents.Agent import Agent, AgentPersona
+from agents.Agent import Agent
+from schemas.core import AgentPersona
 from typeguard import typechecked
 
 class Villager(Agent):

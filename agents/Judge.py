@@ -1,5 +1,5 @@
-import asyncio
-from agents.Agent import Agent, AgentPersona
+from agents.Agent import Agent
+from schemas.core import AgentPersona
 from typeguard import typechecked
 
 class Judge(Agent):
@@ -11,7 +11,7 @@ class Judge(Agent):
         """
 
         conversation_history = f"Recent conversation:\n{context}" if context else ""
-            
+
         prompt = f"""
         You are a deeply incensed judge in a medieval town.
         You have a fairly neutral accent, standard for medieval england.

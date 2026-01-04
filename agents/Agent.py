@@ -1,21 +1,13 @@
 import asyncio
 from typing import Any
 from redis_client import redis_client
-from config import TOWNHALL_STREAM, REPLY_COOLDOWN_SECONDS, MAX_REPLIES_PER_AGENT, CONTEXT_WINDOW
 from typeguard import typechecked
-from typing import List, Tuple, Dict, Sequence, Union, Mapping
-from pydantic import BaseModel
 import time
-from models.MistralModel import MistralModel
 
-class StreamMessage(BaseModel):
-    msg_id: str
-    role: str
-    text: str
-
-class AgentPersona(BaseModel):
-    dynamically_generated_prompt: str
-    backup_message: str
+from config import TOWNHALL_STREAM, REPLY_COOLDOWN_SECONDS, MAX_REPLIES_PER_AGENT, CONTEXT_WINDOW
+from llms.MistralModel import MistralModel
+from schemas.core import StreamMessage, AgentPersona
+from utils.parse_redis import process_unread_messages, process_read_messages
 
 class Agent:
     """Base class for townhall agents that listen to and respond to stream messages."""
@@ -41,64 +33,6 @@ class Agent:
         self.replies_sent: int = 0
 
     @typechecked
-    async def process_unread_messages(self, raw: Any) -> list[StreamMessage]:
-        """
-        Process a batch of unread messages from the stream and acknowledge them.
-        """
-
-        parsed_batch = []
-
-        for stream_name, entries in raw:
-            for msg_id, fields in entries:
-                await redis_client.xack(
-                    self.stream_name,
-                    self.role,
-                    msg_id
-                )
-
-                role = fields.get("role", None)
-                text = fields.get("text", None)
-
-                if role is None or text is None:
-                    continue
-
-                message = StreamMessage(
-                    msg_id=msg_id,
-                    role=role,
-                    text=text
-                )
-
-                parsed_batch.append(message)
-
-        return parsed_batch
-
-    @typechecked
-    def process_read_messages(self, raw: Any) -> list[StreamMessage]:
-        """
-        Process a batch of read messages from the stream.
-        """
-
-        parsed_batch = []
-
-        for message in raw:
-            msg_id, fields = message
-
-            role = fields.get("role", None)
-            text = fields.get("text", None)
-
-            if role is None or text is None:
-                continue
-
-            message = StreamMessage(
-                msg_id=msg_id,
-                role=role,
-                text=text
-            )
-            parsed_batch.append(message)
-
-        return parsed_batch
-
-    @typechecked
     async def get_context(self, bound_msg_id: str, count: int) -> list[StreamMessage]:
         """
         Retrieve context messages from the redis stream before a given message ID.
@@ -112,7 +46,7 @@ class Agent:
         )
         messages.reverse()
 
-        parsed_batch = self.process_read_messages(messages)
+        parsed_batch: list[StreamMessage] = process_read_messages(messages)
 
         for message in parsed_batch:
             if message.msg_id == bound_msg_id:
@@ -188,7 +122,7 @@ class Agent:
             )
 
             # print(f"{self.role} received {len(unread_messages)} new messages.  Unread messages: {unread_messages}")
-            parsed_batch = await self.process_unread_messages(unread_messages)
+            parsed_batch: list[StreamMessage] = await process_unread_messages(self.role, self.stream_name, unread_messages)
             
             if len(parsed_batch) < self.context_window:
                 context = await self.get_context(parsed_batch[0].msg_id, count=self.context_window - len(parsed_batch) + 1)
