@@ -4,7 +4,6 @@ from redis.exceptions import ResponseError
 import asyncio
 from typeguard import typechecked
 from redis_client import redis_client
-from redis.exceptions import ResponseError
 from config import TOWNHALL_STREAM
 
 from agents.Villager import Villager
@@ -37,15 +36,18 @@ async def start_agents(agents: list[Agent]) -> None:
     await asyncio.gather(*(agent.run() for agent in agents))
 
 async def main():
-    agents = [
-        Villager(),
-        Mayor(),
-        Judge(),
-        ChronicleAgent()
-    ]
+    try:
+        agents = [
+            Villager(),
+            Mayor(),
+            Judge(),
+            ChronicleAgent()
+        ]
 
-    await setup_redis(redis_client, TOWNHALL_STREAM, [agent.role for agent in agents])
-    await start_agents(agents)
+        await setup_redis(redis_client, TOWNHALL_STREAM, [agent.role for agent in agents])
+        await start_agents(agents)
+    finally:
+        await redis_client.aclose()
 
 async def cleanup():
     try:
@@ -53,10 +55,4 @@ async def cleanup():
     except RuntimeError:
         pass
 
-try:
-    asyncio.run(main())
-finally:
-    try:
-        asyncio.run(cleanup())
-    except RuntimeError:
-        pass  # Event loop already closed
+asyncio.run(main())

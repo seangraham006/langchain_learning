@@ -2,7 +2,6 @@ import asyncio
 from typing import Any
 from redis_client import redis_client
 from typeguard import typechecked
-import time
 
 from config import TOWNHALL_STREAM, REPLY_COOLDOWN_SECONDS, MAX_REPLIES_PER_AGENT, CONTEXT_WINDOW
 from llms.MistralModel import MistralModel
@@ -24,7 +23,7 @@ class Agent:
         Initialize the agent with default parameters.
         """
 
-        self.role: str = role if role else self.__class__. __name__
+        self.role: str = role if role else self.__class__.__name__
         self.reply_cooldown_seconds: float = reply_cooldown_seconds
         self.stream_name: str = stream_name
         self.context_window: int = context_window
@@ -106,32 +105,40 @@ class Agent:
             {"role": self.role, "text": text}
         )
 
-        time.sleep(self.reply_cooldown_seconds)
+        await asyncio.sleep(self.reply_cooldown_seconds)
 
     async def run(self) -> None:
         """Main event loop: listen for messages and process them."""
 
         while self.replies_sent < self.max_replies_per_agent:
-            # Listen for new messages in the stream
-            unread_messages = await redis_client.xreadgroup(
-                groupname=self.role,
-                consumername=self.role,
-                streams={self.stream_name: ">"},
-                count=self.context_window,
-                block=0
-            )
+            try:
+                # Listen for new messages in the stream
+                unread_messages = await redis_client.xreadgroup(
+                    groupname=self.role,
+                    consumername=self.role,
+                    streams={self.stream_name: ">"},
+                    count=self.context_window,
+                    block=0
+                )
 
-            # Parse unread messages and acknowledge them
-            parsed_batch: list[StreamMessage] = await process_unread_messages(self.role, self.stream_name, unread_messages)
-            
-            if len(parsed_batch) < self.context_window:
-                context = await self.get_context(parsed_batch[0].msg_id, count=self.context_window - len(parsed_batch) + 1)
-                parsed_batch = context + parsed_batch
+                # Parse unread messages and acknowledge them
+                parsed_batch: list[StreamMessage] = await process_unread_messages(self.role, self.stream_name, unread_messages)
+                
+                if len(parsed_batch) < self.context_window:
+                    context = await self.get_context(parsed_batch[0].msg_id, count=self.context_window - len(parsed_batch) + 1)
+                    parsed_batch = context + parsed_batch
 
-            if not self.should_respond_to(parsed_batch):
-                continue
+                if not self.should_respond_to(parsed_batch):
+                    continue
 
-            formatted_context = self.format_context(parsed_batch)
-            persona = self.generate_prompt(formatted_context)
-            thought = await self.think(persona)
-            await self.respond(thought)
+                formatted_context = self.format_context(parsed_batch)
+                persona = self.generate_prompt(formatted_context)
+                thought = await self.think(persona)
+                await self.respond(thought)
+            except asyncio.CancelledError:
+                # Graceful shutdown requested — re-raise to exit cleanly
+                raise
+            except Exception as e:
+                # Log error but continue processing — don't let one bad message kill the agent
+                print(f"\n{self.role} error in run loop: {e}")
+                await asyncio.sleep(1)  # Brief backoff before retrying

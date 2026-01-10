@@ -1,12 +1,17 @@
 from typeguard import typechecked
 import asyncio
-import time
 
 from config import EVENTS_BEFORE_SUMMARY, TOWNHALL_STREAM, SUMMARY_SOFT_LIMIT_WORDS, RETRIES_FOR_SUMMARISATION, SUMMARISATION_CHECK_COOLDOWN_SECONDS
 from schemas.core import StreamMessage
 from redis_client import redis_client
 from utils.parse_redis import process_read_messages
 from llms.MistralModel import MistralModel
+
+
+class SummarisationError(Exception):
+    """Raised when summarisation fails after all retries."""
+    pass
+
 
 class ChronicleAgent:
     """Agent that creates a rolling summary of events in the townhall and saves them to a vector database."""
@@ -59,7 +64,7 @@ class ChronicleAgent:
                 print(f"Error during summarisation attempt {retry_count + 1}: {e}")
                 retry_count += 1
 
-        raise Exception("Failed to summarise events after multiple attempts.")
+        raise SummarisationError(f"Failed to summarise events after {retries} attempts.")
 
     def next_id(self, stream_id: str) -> str:
         ms, seq = stream_id.split("-")
@@ -71,32 +76,40 @@ class ChronicleAgent:
         """
 
         while True:
-            time.sleep(self.summarisation_check_cooldown_seconds)
+            await asyncio.sleep(self.summarisation_check_cooldown_seconds)
 
-            start_id = (
-                "-" if self.last_summarised_event_id is None
-                else self.next_id(self.last_summarised_event_id)
-            )
+            try:
+                start_id = (
+                    "-" if self.last_summarised_event_id is None
+                    else self.next_id(self.last_summarised_event_id)
+                )
 
-            unread_messages = await redis_client.xrange(
-                self.stream_name,
-                min=start_id,
-                max="+",
-                count=self.events_before_summary
-            )
+                unread_messages = await redis_client.xrange(
+                    self.stream_name,
+                    min=start_id,
+                    max="+",
+                    count=self.events_before_summary
+                )
 
-            parsed_messages: list[StreamMessage] = process_read_messages(unread_messages)
+                parsed_messages: list[StreamMessage] = process_read_messages(unread_messages)
 
-            if len(parsed_messages) >= self.events_before_summary:
-                start_msg_id = parsed_messages[0].msg_id
-                end_msg_id = parsed_messages[-1].msg_id
+                if len(parsed_messages) >= self.events_before_summary:
+                    start_msg_id = parsed_messages[0].msg_id
+                    end_msg_id = parsed_messages[-1].msg_id
 
-                try:
-                    summary = await self.summarise_events(parsed_messages)
-                except Exception as e:
-                    print(f"\n{self.role} Failed to summarise events: {e}")
-                    continue
+                    try:
+                        summary = await self.summarise_events(parsed_messages)
+                    except SummarisationError as e:
+                        print(f"\n{self.role} Failed to summarise events: {e}")
+                        continue
 
-                # Here you would save the summary to a vector database
-                print(f"\n{self.role} Generated Summary for messages from {start_msg_id} to {end_msg_id}:\n{summary}")
-                self.last_summarised_event_id = end_msg_id
+                    # Here you would save the summary to a vector database
+                    print(f"\n{self.role} Generated Summary for messages from {start_msg_id} to {end_msg_id}:\n{summary}")
+                    self.last_summarised_event_id = end_msg_id
+            except asyncio.CancelledError:
+                # Graceful shutdown requested — re-raise to exit cleanly
+                raise
+            except Exception as e:
+                # Log error but continue processing
+                print(f"\n{self.role} error in run loop: {e}")
+                await asyncio.sleep(1)  # Brief backoff before retrying
