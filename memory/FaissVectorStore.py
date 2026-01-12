@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Optional, Self
+from typing import Optional
 import threading
 import numpy as np
 import faiss
@@ -26,7 +26,7 @@ class FaissVectorStore:
 
         self._lock = threading.Lock()
     
-    def __enter__(self) -> Self:
+    def __enter__(self) -> "FaissVectorStore":
         self.load_or_create()
         return self
     

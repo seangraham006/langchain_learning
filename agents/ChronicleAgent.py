@@ -5,13 +5,14 @@ from config import EVENTS_BEFORE_SUMMARY, TOWNHALL_STREAM, SUMMARY_SOFT_LIMIT_WO
 from schemas.core import StreamMessage
 from redis_client import redis_client
 from utils.parse_redis import process_read_messages
+from utils.embeddings import generate_embedding
 from llms.MistralModel import MistralModel
-
+from memory.SQLiteSummaryStore import SQLiteSummaryStore
+from memory.FaissVectorStore import FaissVectorStore
 
 class SummarisationError(Exception):
     """Raised when summarisation fails after all retries."""
     pass
-
 
 class ChronicleAgent:
     """Agent that creates a rolling summary of events in the townhall and saves them to a vector database."""
@@ -21,6 +22,7 @@ class ChronicleAgent:
             role: str = None,
             stream_name: str = TOWNHALL_STREAM,
             summarisation_check_cooldown_seconds: float = SUMMARISATION_CHECK_COOLDOWN_SECONDS,
+            retries_for_summarisation: int = RETRIES_FOR_SUMMARISATION,
             events_before_summary: int = EVENTS_BEFORE_SUMMARY
         ) -> None:
         """
@@ -30,12 +32,13 @@ class ChronicleAgent:
         self.role: str = role if role else self.__class__.__name__
         self.stream_name: str = stream_name
         self.summarisation_check_cooldown_seconds = summarisation_check_cooldown_seconds
+        self.retries_for_summarisation: int = retries_for_summarisation
         self.events_before_summary: int = events_before_summary
 
         self.last_summarised_event_id: str | None = None
 
     @typechecked
-    async def summarise_events(self, events: list[StreamMessage], retries: int = RETRIES_FOR_SUMMARISATION) -> str:
+    async def summarise_events(self, events: list[StreamMessage]) -> str:
         """
         Summarise a list of events into a concise summary.
         """
@@ -55,7 +58,7 @@ class ChronicleAgent:
         """
 
         retry_count = 0
-        while retry_count < retries:
+        while retry_count < self.retries_for_summarisation:
             try:
                 response = await asyncio.to_thread(MistralModel.invoke, prompt)
                 response_text = response.content if hasattr(response, 'content') else str(response)
@@ -64,7 +67,7 @@ class ChronicleAgent:
                 print(f"Error during summarisation attempt {retry_count + 1}: {e}")
                 retry_count += 1
 
-        raise SummarisationError(f"Failed to summarise events after {retries} attempts.")
+        raise SummarisationError(f"Failed to summarise events after {self.retries_for_summarisation} attempts.")
 
     def next_id(self, stream_id: str) -> str:
         ms, seq = stream_id.split("-")
@@ -105,6 +108,20 @@ class ChronicleAgent:
 
                     # Here you would save the summary to a vector database
                     print(f"\n{self.role} Generated Summary for messages from {start_msg_id} to {end_msg_id}:\n{summary}")
+
+                    with SQLiteSummaryStore() as summary_store:
+                        summary_store.insert_summary(
+                            stream_name=self.stream_name,
+                            start_msg_id=start_msg_id,
+                            end_msg_id=end_msg_id,
+                            summary_text=summary
+                        )
+
+                    with FaissVectorStore() as vector_store:
+                        # Generate embedding locally (no API calls)
+                        embedding = generate_embedding(summary)
+                        vector_store.add(sqlite_id=end_msg_id, embedding=embedding)
+
                     self.last_summarised_event_id = end_msg_id
             except asyncio.CancelledError:
                 # Graceful shutdown requested — re-raise to exit cleanly
