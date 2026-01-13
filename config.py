@@ -21,4 +21,9 @@ EVENTS_BEFORE_SUMMARY = 10
 SUMMARY_SOFT_LIMIT_WORDS = 100
 RETRIES_FOR_SUMMARISATION = 3
 SUMMARISATION_CHECK_COOLDOWN_SECONDS = 1
-DB_PATH = "/home/sean/projects/langchain/data/townhall_memory.db"
+
+# Paths - use Path for cross-platform compatibility
+from pathlib import Path
+_DATA_DIR = Path(__file__).parent / "data"
+DB_PATH = str(_DATA_DIR / "townhall_memory.db")
+FAISS_INDEX_PATH = str(_DATA_DIR / "faiss.index")

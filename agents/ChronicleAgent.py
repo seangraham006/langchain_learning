@@ -2,7 +2,7 @@ from typeguard import typechecked
 import asyncio
 import numpy as np
 
-from config import EVENTS_BEFORE_SUMMARY, TOWNHALL_STREAM, SUMMARY_SOFT_LIMIT_WORDS, RETRIES_FOR_SUMMARISATION, SUMMARISATION_CHECK_COOLDOWN_SECONDS
+from config import EVENTS_BEFORE_SUMMARY, TOWNHALL_STREAM, SUMMARY_SOFT_LIMIT_WORDS, RETRIES_FOR_SUMMARISATION, SUMMARISATION_CHECK_COOLDOWN_SECONDS, FAISS_INDEX_PATH
 from schemas.core import StreamMessage, SummaryRecord
 from redis_client import redis_client
 from utils.parse_redis import process_read_messages
@@ -127,7 +127,7 @@ class ChronicleAgent:
                         summary_id = summary_store.insert_summary(summary_record)
 
                     # Store in Faiss index (rebuildable cache for fast search)
-                    with FaissVectorStore(index_path="data/faiss.index", dimension=768) as vector_store:
+                    with FaissVectorStore(index_path=FAISS_INDEX_PATH) as vector_store:
                         vector_store.add(sqlite_id=summary_id, embedding=embedding)
 
                     self.last_summarised_event_id = end_msg_id

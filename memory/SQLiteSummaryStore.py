@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional
 
 from config import DB_PATH
-from schemas.core import SummaryRecord
+from schemas.core import SummaryRecord, SummaryMetadata
 
 
 class SQLiteSummaryStore:
@@ -138,11 +138,12 @@ class SQLiteSummaryStore:
                         stream_name,
                         start_msg_id,
                         end_msg_id,
-                        summary_text
+                        summary_text,
+                        embedding
                     )
-                    VALUES (?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?)
                     """,
-                    [(r.stream_name, r.start_msg_id, r.end_msg_id, r.summary_text) for r in records],
+                    [(r.stream_name, r.start_msg_id, r.end_msg_id, r.summary_text, r.embedding) for r in records],
                 )
                 self.conn.commit()
             except sqlite3.IntegrityError as e:
@@ -152,7 +153,7 @@ class SQLiteSummaryStore:
                 self.conn.rollback()
                 raise RuntimeError(f"Failed to insert summaries: {e}") from e
 
-    def get_summaries_by_stream(self, stream_name: str, limit: int = 100) -> list[SummaryRecord]:
+    def get_summaries_by_stream(self, stream_name: str, limit: int = 100) -> list[SummaryMetadata]:
         """
         Retrieve summaries for a given stream, ordered by creation time (newest first).
         """
@@ -172,7 +173,7 @@ class SQLiteSummaryStore:
                     (stream_name, limit),
                 )
                 return [
-                    SummaryRecord(
+                    SummaryMetadata(
                         stream_name=row["stream_name"],
                         start_msg_id=row["start_msg_id"],
                         end_msg_id=row["end_msg_id"],
@@ -183,7 +184,7 @@ class SQLiteSummaryStore:
             except Exception as e:
                 raise RuntimeError(f"Failed to get summaries: {e}") from e
 
-    def get_latest_summary(self, stream_name: str) -> Optional[SummaryRecord]:
+    def get_latest_summary(self, stream_name: str) -> Optional[SummaryMetadata]:
         """
         Retrieve the most recent summary for a given stream.
         Returns None if no summaries exist.
@@ -206,7 +207,7 @@ class SQLiteSummaryStore:
                 row = cursor.fetchone()
                 if row is None:
                     return None
-                return SummaryRecord(
+                return SummaryMetadata(
                     stream_name=row["stream_name"],
                     start_msg_id=row["start_msg_id"],
                     end_msg_id=row["end_msg_id"],
@@ -215,7 +216,7 @@ class SQLiteSummaryStore:
             except Exception as e:
                 raise RuntimeError(f"Failed to get latest summary: {e}") from e
 
-    def get_summary_after(self, stream_name: str, msg_id: str) -> Optional[SummaryRecord]:
+    def get_summary_after(self, stream_name: str, msg_id: str) -> Optional[SummaryMetadata]:
         """
         Retrieve the first summary that starts after the given message ID.
         Returns None if no such summary exists.
@@ -238,7 +239,7 @@ class SQLiteSummaryStore:
                 row = cursor.fetchone()
                 if row is None:
                     return None
-                return SummaryRecord(
+                return SummaryMetadata(
                     stream_name=row["stream_name"],
                     start_msg_id=row["start_msg_id"],
                     end_msg_id=row["end_msg_id"],

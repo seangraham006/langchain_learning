@@ -16,3 +16,7 @@ tests/*.pyc
 .idea/
 *.pyc
 data/
+memory/__pycache__/
+memory/*.pyc
+llms/__pycache__/
+llms/*.pyc

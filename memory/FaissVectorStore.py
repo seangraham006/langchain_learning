@@ -3,6 +3,7 @@ from typing import Optional
 import threading
 import numpy as np
 import faiss
+from config import FAISS_INDEX_PATH
 
 class FaissVectorStore:
     """
@@ -10,7 +11,7 @@ class FaissVectorStore:
     Faiss index maps to SQLite summary IDs.
     """
     
-    def __init__(self, index_path: str, dimension: int = 768) -> None:
+    def __init__(self, index_path: str = FAISS_INDEX_PATH, dimension: int = 768) -> None:
         # Where Faiss index is stored on disk
         self.index_path = Path(index_path)
 
