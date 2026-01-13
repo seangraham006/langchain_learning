@@ -1,8 +1,9 @@
 from typeguard import typechecked
 import asyncio
+import numpy as np
 
 from config import EVENTS_BEFORE_SUMMARY, TOWNHALL_STREAM, SUMMARY_SOFT_LIMIT_WORDS, RETRIES_FOR_SUMMARISATION, SUMMARISATION_CHECK_COOLDOWN_SECONDS
-from schemas.core import StreamMessage
+from schemas.core import StreamMessage, SummaryRecord
 from redis_client import redis_client
 from utils.parse_redis import process_read_messages
 from utils.embeddings import generate_embedding
@@ -109,18 +110,25 @@ class ChronicleAgent:
                     # Here you would save the summary to a vector database
                     print(f"\n{self.role} Generated Summary for messages from {start_msg_id} to {end_msg_id}:\n{summary}")
 
-                    with SQLiteSummaryStore() as summary_store:
-                        summary_store.insert_summary(
-                            stream_name=self.stream_name,
-                            start_msg_id=start_msg_id,
-                            end_msg_id=end_msg_id,
-                            summary_text=summary
-                        )
+                    # Generate embedding once (expensive operation)
+                    embedding: np.ndarray = generate_embedding(summary)
+                    embedding_bytes: bytes = embedding.tobytes()  # Serialize to bytes for SQLite BLOB
 
-                    with FaissVectorStore() as vector_store:
-                        # Generate embedding locally (no API calls)
-                        embedding = generate_embedding(summary)
-                        vector_store.add(sqlite_id=end_msg_id, embedding=embedding)
+                    summary_record: SummaryRecord = SummaryRecord(
+                        stream_name=self.stream_name,
+                        start_msg_id=start_msg_id,
+                        end_msg_id=end_msg_id,
+                        summary_text=summary,
+                        embedding=embedding_bytes
+                    )
+
+                    # Store summary + embedding in SQLite (source of truth)
+                    with SQLiteSummaryStore() as summary_store:
+                        summary_id = summary_store.insert_summary(summary_record)
+
+                    # Store in Faiss index (rebuildable cache for fast search)
+                    with FaissVectorStore(index_path="data/faiss.index", dimension=768) as vector_store:
+                        vector_store.add(sqlite_id=summary_id, embedding=embedding)
 
                     self.last_summarised_event_id = end_msg_id
             except asyncio.CancelledError:

@@ -73,6 +73,7 @@ class SQLiteSummaryStore:
                         start_msg_id TEXT NOT NULL,
                         end_msg_id TEXT NOT NULL,
                         summary_text TEXT NOT NULL,
+                        embedding BLOB,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         UNIQUE(stream_name, start_msg_id, end_msg_id)
                     );
@@ -101,19 +102,21 @@ class SQLiteSummaryStore:
                 raise RuntimeError("SQLite connection not initialized")
 
             try:
-                self.conn.execute(
+                cursor = self.conn.execute(
                     """
                     INSERT INTO summaries (
                         stream_name,
                         start_msg_id,
                         end_msg_id,
-                        summary_text
+                        summary_text,
+                        embedding
                     )
-                    VALUES (?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?)
                     """,
-                    (record.stream_name, record.start_msg_id, record.end_msg_id, record.summary_text),
+                    (record.stream_name, record.start_msg_id, record.end_msg_id, record.summary_text, record.embedding),
                 )
                 self.conn.commit()
+                return cursor.lastrowid
             except sqlite3.IntegrityError as e:
                 raise RuntimeError(f"Duplicate summary record: {e}") from e
             except Exception as e:
@@ -243,6 +246,31 @@ class SQLiteSummaryStore:
                 )
             except Exception as e:
                 raise RuntimeError(f"Failed to get summary after msg_id: {e}") from e
+
+    def get_all_embeddings(self) -> list[tuple[int, bytes]]:
+        """
+        Retrieve all (id, embedding) pairs where embedding is not null.
+        Used for rebuilding Faiss index from SQLite.
+        
+        Returns:
+            List of (summary_id, embedding_bytes) tuples
+        """
+        with self._lock:
+            if self.conn is None:
+                raise RuntimeError("SQLite connection not initialized")
+            
+            try:
+                cursor = self.conn.execute(
+                    """
+                    SELECT id, embedding
+                    FROM summaries
+                    WHERE embedding IS NOT NULL
+                    ORDER BY id ASC
+                    """
+                )
+                return [(row["id"], row["embedding"]) for row in cursor.fetchall()]
+            except Exception as e:
+                raise RuntimeError(f"Failed to retrieve embeddings: {e}") from e
 
     def close(self) -> None:
         """Close the database connection."""

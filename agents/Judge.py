@@ -28,6 +28,6 @@ class Judge(Agent):
         backup_message = "Order! Order! This discussion must be brought to a close."
 
         return AgentPersona(
-            dynamically_generated_prompt=prompt,
+            formatted_prompt=prompt,
             backup_message=backup_message
         )

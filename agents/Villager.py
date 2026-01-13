@@ -24,6 +24,6 @@ class Villager(Agent):
         backup_message = "Oi! I ain't got much to say 'bout that right now."
 
         return AgentPersona(
-            dynamically_generated_prompt=prompt,
+            formatted_prompt=prompt,
             backup_message=backup_message
         )

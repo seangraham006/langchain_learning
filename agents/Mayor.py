@@ -25,6 +25,6 @@ class Mayor(Agent):
         backup_message = "I think it will all work out fine, mes amis."
 
         return AgentPersona(
-            dynamically_generated_prompt=prompt,
+            formatted_prompt=prompt,
             backup_message=backup_message
         )

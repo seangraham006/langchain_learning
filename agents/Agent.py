@@ -86,7 +86,7 @@ class Agent:
         """
 
         try:
-            response = await asyncio.to_thread(MistralModel.invoke, persona.dynamically_generated_prompt)
+            response = await asyncio.to_thread(MistralModel.invoke, persona.formatted_prompt)
             response_text = response.content if hasattr(response, 'content') else str(response)
             return response_text
         except Exception as e:
