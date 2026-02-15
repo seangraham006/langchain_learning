@@ -14,7 +14,10 @@ Consumer groups do not just 'receive' the metadata pings, they keep polling the 
 
 
 TOWNHALL_STREAM = "townhall"
+
 CONTEXT_WINDOW = 10
+MEMORY_CONTEXT_WINDOW = 5
+
 MAX_REPLIES_PER_AGENT = 10
 REPLY_COOLDOWN_SECONDS = 10
 EVENTS_BEFORE_SUMMARY = 10

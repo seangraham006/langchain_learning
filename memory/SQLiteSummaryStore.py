@@ -153,6 +153,42 @@ class SQLiteSummaryStore:
                 self.conn.rollback()
                 raise RuntimeError(f"Failed to insert summaries: {e}") from e
 
+    def get_summaries_by_ids(self, ids: list[int]) -> list[SummaryMetadata]:
+        """
+        Retrieve summaries by their SQLite primary key IDs.
+        Preserves the order of the input ID list.
+        """
+        if not ids:
+            return []
+
+        with self._lock:
+            if self.conn is None:
+                raise RuntimeError("SQLite connection not initialized")
+
+            try:
+                placeholders = ",".join("?" for _ in ids)
+                cursor = self.conn.execute(
+                    f"""
+                    SELECT id, stream_name, start_msg_id, end_msg_id, summary_text
+                    FROM summaries
+                    WHERE id IN ({placeholders})
+                    """,
+                    ids,
+                )
+                rows_by_id = {
+                    row["id"]: SummaryMetadata(
+                        stream_name=row["stream_name"],
+                        start_msg_id=row["start_msg_id"],
+                        end_msg_id=row["end_msg_id"],
+                        summary_text=row["summary_text"],
+                    )
+                    for row in cursor.fetchall()
+                }
+                # Return in the same order as the input IDs (preserves Faiss ranking order)
+                return [rows_by_id[sid] for sid in ids if sid in rows_by_id]
+            except Exception as e:
+                raise RuntimeError(f"Failed to get summaries by IDs: {e}") from e
+
     def get_summaries_by_stream(self, stream_name: str, limit: int = 100) -> list[SummaryMetadata]:
         """
         Retrieve summaries for a given stream, ordered by creation time (newest first).

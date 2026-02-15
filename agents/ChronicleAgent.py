@@ -18,9 +18,23 @@ class SummarisationError(Exception):
 class ChronicleAgent:
     """Agent that creates a rolling summary of events in the townhall and saves them to a vector database."""
 
+    # ANSI color codes (same as Agent)
+    COLORS = {
+        "red": "\033[91m",
+        "green": "\033[92m",
+        "yellow": "\033[93m",
+        "blue": "\033[94m",
+        "magenta": "\033[95m",
+        "cyan": "\033[96m",
+        "white": "\033[97m",
+        "orange": "\033[38;5;208m",
+    }
+    RESET = "\033[0m"
+
     def __init__(
             self,
             role: str = None,
+            color: str = None,
             stream_name: str = TOWNHALL_STREAM,
             summarisation_check_cooldown_seconds: float = SUMMARISATION_CHECK_COOLDOWN_SECONDS,
             retries_for_summarisation: int = RETRIES_FOR_SUMMARISATION,
@@ -31,12 +45,17 @@ class ChronicleAgent:
         """
 
         self.role: str = role if role else self.__class__.__name__
+        self.color: str = self.COLORS.get(color, "") if color else ""
         self.stream_name: str = stream_name
         self.summarisation_check_cooldown_seconds = summarisation_check_cooldown_seconds
         self.retries_for_summarisation: int = retries_for_summarisation
         self.events_before_summary: int = events_before_summary
 
         self.last_summarised_event_id: str | None = None
+
+    def cprint(self, text: str) -> None:
+        """Print text in this agent's assigned color with role prefix."""
+        print(f"{self.color}[{self.role}] {text}{self.RESET}")
 
     @typechecked
     async def summarise_events(self, events: list[StreamMessage]) -> str:
@@ -123,15 +142,15 @@ class ChronicleAgent:
                     try:
                         summary = await self.summarise_events(parsed_messages)
                     except SummarisationError as e:
-                        print(f"\n{self.role} Failed to summarise events: {e}")
+                        self.cprint(f"Failed to summarise events: {e}")
                         continue
 
                     # Here you would save the summary to a vector database
-                    print(f"\n{self.role} Generated Summary for messages from {start_msg_id} to {end_msg_id}:\n{summary}")
+                    self.cprint(f"Generated Summary for messages from {start_msg_id} to {end_msg_id}:\n{summary}")
 
                     # Generate embedding once (expensive operation)
                     embedding: np.ndarray = generate_embedding(summary)
-                    print(f"\n{self.role} Generated embedding:\n{embedding}.")
+                    self.cprint(f"Generated embedding.")
                     embedding_bytes: bytes = embedding.tobytes()  # Serialize to bytes for SQLite BLOB
 
                     summary_record: SummaryRecord = SummaryRecord(
@@ -156,5 +175,5 @@ class ChronicleAgent:
                 raise
             except Exception as e:
                 # Log error but continue processing
-                print(f"\n{self.role} error in run loop: {e}")
+                self.cprint(f"error in run loop: {e}")
                 await asyncio.sleep(1)  # Brief backoff before retrying

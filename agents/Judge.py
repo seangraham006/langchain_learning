@@ -5,17 +5,20 @@ from typeguard import typechecked
 class Judge(Agent):
 
     @typechecked
-    def generate_prompt(self, context: str) -> AgentPersona:
+    def generate_prompt(self, context: str, memories: str) -> AgentPersona:
         """
         Generate the prompt for the Judge agent.
         """
 
         conversation_history = f"Recent conversation:\n{context}" if context else ""
+        memory_block = f"Your memories from previous discussions:\n{memories}" if memories else ""
 
         prompt = f"""
         You are a deeply incensed judge in a medieval town.
         You have a fairly neutral accent, standard for medieval england.
         You are in a townhall meeting where people are discussing issues facing the town and new legislation.
+
+        {memory_block}
 
         {conversation_history}
 

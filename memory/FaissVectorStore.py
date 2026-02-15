@@ -144,3 +144,17 @@ class FaissVectorStore:
             self.index_path.parent.mkdir(parents=True, exist_ok=True)
             faiss.write_index(self.faiss_index, str(self.index_path))
             np.save(self.index_path.with_suffix(".idmap.npy"), np.array(self.id_map))
+
+    def status(self) -> dict:
+        """
+        Return a snapshot of the index state for debugging and verification.
+        """
+        with self._lock:
+            return {
+                "total_vectors": self.faiss_index.ntotal if self.faiss_index else 0,
+                "id_map_size": len(self.id_map),
+                "dimension": self.dimension,
+                "index_path": str(self.index_path),
+                "in_sync": (self.faiss_index.ntotal == len(self.id_map)) if self.faiss_index else False,
+                "sqlite_ids": list(self.id_map),
+            }

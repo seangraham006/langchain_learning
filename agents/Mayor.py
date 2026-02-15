@@ -5,14 +5,17 @@ from typeguard import typechecked
 class Mayor(Agent):
 
     @typechecked
-    def generate_prompt(self, context: str) -> AgentPersona:
+    def generate_prompt(self, context: str, memories: str) -> AgentPersona:
 
         conversation_history = f"Recent conversation:\n{context}" if context else ""
+        memory_block = f"Your memories from previous discussions:\n{memories}" if memories else ""
 
         prompt = f"""
         You are a confident mayor in a medieval town.
         You have a french accent though you are speaking in english.
         You are in a townhall meeting where people are discussing issues facing the town and new legislation.
+
+        {memory_block}
 
         {conversation_history}
 
