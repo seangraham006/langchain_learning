@@ -41,7 +41,7 @@ class ChronicleAgent:
     @typechecked
     async def summarise_events(self, events: list[StreamMessage]) -> str:
         """
-        Summarise a list of events into a concise summary.
+        Send a list of events to an LLM to be summarised, with retries on failure.
         """
 
         context = "".join(f"{msg.role}: {msg.text}\n\n" for msg in events)
@@ -74,20 +74,37 @@ class ChronicleAgent:
         ms, seq = stream_id.split("-")
         return f"{ms}-{int(seq) + 1}"
 
+    @typechecked
     async def run(self):
         """
-        Run the ChronicleAgent to summarise events.
+        Continuously monitor the configured Redis stream and create rolling summaries.
+
+        The loop wakes every self.summarisation_check_cooldown_seconds, reads up to
+        self.events_before_summary unread events after the last summarised message,
+        and only proceeds when enough events are available. When triggered, it:
+
+        1. Summarises the batch with summarise_events.
+        2. Generates an embedding for the summary.
+        3. Persists the summary + embedding bytes in SQLite (source of truth).
+        4. Adds the embedding to Faiss for fast vector lookup.
+        5. Advances self.last_summarised_event_id to avoid reprocessing.
+
+        The method runs until cancelled. asyncio.CancelledError is re-raised for
+        graceful shutdown, while other exceptions are logged and retried after a brief
+        backoff so the agent remains resilient.
         """
 
         while True:
             await asyncio.sleep(self.summarisation_check_cooldown_seconds)
 
             try:
+                # Set the bottom range of what messages you will fetch
                 start_id = (
                     "-" if self.last_summarised_event_id is None
                     else self.next_id(self.last_summarised_event_id)
                 )
 
+                # Fetch all messages after start_id, up to the number of events we want to summarise
                 unread_messages = await redis_client.xrange(
                     self.stream_name,
                     min=start_id,
@@ -95,9 +112,11 @@ class ChronicleAgent:
                     count=self.events_before_summary
                 )
 
+                # Parse raw Redis messages into StreamMessage objects
                 parsed_messages: list[StreamMessage] = process_read_messages(unread_messages)
 
                 if len(parsed_messages) >= self.events_before_summary:
+                    # Determine the range of message IDs being summarised
                     start_msg_id = parsed_messages[0].msg_id
                     end_msg_id = parsed_messages[-1].msg_id
 
