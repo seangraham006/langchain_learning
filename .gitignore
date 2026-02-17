@@ -20,3 +20,4 @@ memory/__pycache__/
 memory/*.pyc
 llms/__pycache__/
 llms/*.pyc
+article/
